@@ -262,7 +262,9 @@ export function loadAllProjects(): Project[] {
 
 export function findProjectByPath(path: string): Project | null {
   const projects = loadAllProjects();
-  return projects.find((p) => path.startsWith(p.path)) || null;
+  // Use the model's path matching which handles symlinks
+  const { findBestMatchingProject } = require('../models/project');
+  return findBestMatchingProject(projects, path);
 }
 
 // ============================================================================

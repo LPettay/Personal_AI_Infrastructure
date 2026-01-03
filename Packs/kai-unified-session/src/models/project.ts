@@ -151,6 +151,28 @@ export function getAllProjectGoals(project: Project): string[] {
 }
 
 /**
+ * Resolve a path to its real path (resolving symlinks)
+ * Falls back to original path if resolution fails
+ */
+function resolvePath(path: string): string {
+  try {
+    // Use Bun's or Node's realpathSync
+    const fs = require('fs');
+    return fs.realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
+/**
+ * Normalize a path for comparison (resolve symlinks, remove trailing slash)
+ */
+function normalizePath(path: string): string {
+  const resolved = resolvePath(path);
+  return resolved.replace(/\/+$/, '');
+}
+
+/**
  * Check if a path matches a project
  * Returns true if the path is within the project's path or any of its aliases
  */
@@ -159,17 +181,18 @@ export function pathMatchesProject(project: Project, testPath: string): boolean 
     return false;
   }
 
-  // Normalize the test path
-  const normalizedTestPath = testPath.replace(/\/+$/, '');
+  // Normalize paths (resolve symlinks like /tmp -> /private/tmp on macOS)
+  const normalizedTestPath = normalizePath(testPath);
+  const normalizedProjectPath = normalizePath(project.path);
 
   // Check primary path
-  if (normalizedTestPath === project.path || normalizedTestPath.startsWith(project.path + '/')) {
+  if (normalizedTestPath === normalizedProjectPath || normalizedTestPath.startsWith(normalizedProjectPath + '/')) {
     return true;
   }
 
   // Check aliases
   for (const alias of project.aliases) {
-    const normalizedAlias = alias.replace(/\/+$/, '');
+    const normalizedAlias = normalizePath(alias);
     if (normalizedTestPath === normalizedAlias || normalizedTestPath.startsWith(normalizedAlias + '/')) {
       return true;
     }
@@ -186,13 +209,16 @@ export function findBestMatchingProject(projects: Project[], testPath: string): 
   let bestMatch: Project | null = null;
   let bestMatchLength = 0;
 
+  const normalizedTestPath = normalizePath(testPath);
+
   for (const project of projects) {
     if (!pathMatchesProject(project, testPath)) {
       continue;
     }
 
-    // Check which path matched and use its length for specificity
-    const matchLength = project.path.length;
+    // Use normalized path length for specificity comparison
+    const normalizedProjectPath = normalizePath(project.path);
+    const matchLength = normalizedProjectPath.length;
 
     if (matchLength > bestMatchLength) {
       bestMatch = project;
@@ -201,9 +227,10 @@ export function findBestMatchingProject(projects: Project[], testPath: string): 
 
     // Also check aliases
     for (const alias of project.aliases) {
-      if (testPath.startsWith(alias) && alias.length > bestMatchLength) {
+      const normalizedAlias = normalizePath(alias);
+      if (normalizedTestPath.startsWith(normalizedAlias) && normalizedAlias.length > bestMatchLength) {
         bestMatch = project;
-        bestMatchLength = alias.length;
+        bestMatchLength = normalizedAlias.length;
       }
     }
   }
