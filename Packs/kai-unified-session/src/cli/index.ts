@@ -24,6 +24,9 @@ import {
   getBranches,
   getOrCreateProject,
   getProjects,
+  registerProject,
+  detectProjectFromPath,
+  getProjectActiveGoals,
 } from '../storage/goal-service';
 
 import {
@@ -65,8 +68,10 @@ COMMANDS:
   goal switch <id> <branch>  Switch to a branch
   goal abandon-branch <id> <branch> <reason>
 
-  project list               List all projects
-  project create <name> <path>
+  project list               List all registered projects
+  project register <name> <path> [--repo <url>]  Register a project
+  project detect [path]      Detect project from path (default: cwd)
+  project goals <id>         Show goals for a project
 
   session status             Show current session state
   session context            Show detailed context
@@ -427,21 +432,63 @@ async function handleProjectCommand() {
     case 'list': {
       const projects = getProjects();
       if (projects.length === 0) {
-        console.log('No projects found.');
+        console.log('No projects registered. Use "project register" to add one.');
         return;
       }
 
-      console.log('\nProjects:');
+      console.log('\nRegistered Projects:');
       for (const project of projects) {
-        console.log(`  ${project.id}`);
+        console.log(`\n  ${project.id}`);
         console.log(`    Name: ${project.name}`);
         console.log(`    Path: ${project.path}`);
+        if (project.repo) {
+          console.log(`    Repo: ${project.repo}`);
+        }
         console.log(`    Active goals: ${project.active_goals.length}`);
+        console.log(`    Auto-detect: ${project.auto_detect ? 'yes' : 'no'}`);
+      }
+      break;
+    }
+
+    case 'register': {
+      const name = args[2];
+      let path = args[3];
+
+      if (!name) {
+        console.error('Usage: project register <name> <path> [--repo <url>]');
+        process.exit(1);
+      }
+
+      // Default to cwd if no path provided
+      if (!path || path.startsWith('--')) {
+        path = process.cwd();
+      }
+
+      // Parse optional args
+      let repo: string | undefined;
+      const repoIdx = args.indexOf('--repo');
+      if (repoIdx !== -1 && args[repoIdx + 1]) {
+        repo = args[repoIdx + 1];
+      }
+
+      const project = registerProject({
+        name,
+        path,
+        repo,
+        auto_detect: true,
+      });
+
+      console.log(`Project registered: ${project.id}`);
+      console.log(`  Name: ${project.name}`);
+      console.log(`  Path: ${project.path}`);
+      if (project.repo) {
+        console.log(`  Repo: ${project.repo}`);
       }
       break;
     }
 
     case 'create': {
+      // Alias for register (legacy compatibility)
       const name = args[2];
       const path = args[3];
       if (!name || !path) {
@@ -451,6 +498,48 @@ async function handleProjectCommand() {
 
       const project = getOrCreateProject(name, path);
       console.log(`Project created/found: ${project.id}`);
+      break;
+    }
+
+    case 'detect': {
+      const testPath = args[2] || process.cwd();
+      const project = detectProjectFromPath(testPath);
+
+      if (project) {
+        console.log(`\nDetected project: ${project.name}`);
+        console.log(`  ID: ${project.id}`);
+        console.log(`  Path: ${project.path}`);
+        if (project.repo) {
+          console.log(`  Repo: ${project.repo}`);
+        }
+        console.log(`  Active goals: ${project.active_goals.length}`);
+      } else {
+        console.log(`No registered project found for: ${testPath}`);
+        console.log('Use "project register" to register this path.');
+      }
+      break;
+    }
+
+    case 'goals': {
+      const projectId = args[2];
+      if (!projectId) {
+        console.error('Usage: project goals <project-id>');
+        process.exit(1);
+      }
+
+      const goals = getProjectActiveGoals(projectId);
+      if (goals.length === 0) {
+        console.log(`No active goals for project: ${projectId}`);
+        return;
+      }
+
+      console.log(`\nActive goals for ${projectId}:`);
+      for (const goal of goals) {
+        const pct = Math.round(goal.progress * 100);
+        console.log(`\n  ${goal.id}`);
+        console.log(`    ${goal.title} (${pct}%)`);
+        console.log(`    Status: ${goal.status}`);
+      }
       break;
     }
 

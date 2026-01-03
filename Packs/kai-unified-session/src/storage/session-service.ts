@@ -15,9 +15,11 @@ import {
   ActiveAgent,
   ParallelContext,
 } from '../models';
-import { saveSessionState, loadSessionState } from './yaml-store';
+import { saveSessionState, loadSessionState, loadAllProjects } from './yaml-store';
 import { loadGoal } from './yaml-store';
 import { getActiveGoals } from './index-builder';
+import { detectProjectFromPath, getProjectActiveGoals } from './goal-service';
+import { Project, findBestMatchingProject } from '../models';
 
 /**
  * Get the current device name
@@ -236,8 +238,62 @@ export function addParallel(context: ParallelContext): SessionState {
 /**
  * Generate context for session start
  */
-export function generateStartContext(): string {
+export function generateStartContext(cwd?: string): string {
   const state = loadSessionState();
+
+  // Try to detect project from cwd
+  let detectedProject: Project | null = null;
+  if (cwd) {
+    const projects = loadAllProjects();
+    detectedProject = findBestMatchingProject(projects, cwd);
+  }
+
+  // If we detected a project, show project-specific context
+  if (detectedProject) {
+    const projectGoals = getProjectActiveGoals(detectedProject.id);
+
+    if (projectGoals.length > 0) {
+      const goalSummaries: string[] = [];
+      for (const goal of projectGoals.slice(0, 5)) {
+        const pct = Math.round(goal.progress * 100);
+        goalSummaries.push(`- **${goal.title}** (${pct}%)`);
+      }
+
+      return `
+<session-context>
+## Project: ${detectedProject.name}
+
+**Path:** ${detectedProject.path}
+${detectedProject.repo ? `**Repo:** ${detectedProject.repo}` : ''}
+
+### Active Goals for this Project
+
+${goalSummaries.join('\n')}
+
+${projectGoals.length > 5 ? `...and ${projectGoals.length - 5} more\n` : ''}
+Quick actions:
+- "Continue [goal name]" - Resume a goal
+- "Create a goal for [description]" - Start a new goal for this project
+- "Show all projects" - See other projects
+</session-context>
+`;
+    } else {
+      return `
+<session-context>
+## Project: ${detectedProject.name}
+
+**Path:** ${detectedProject.path}
+${detectedProject.repo ? `**Repo:** ${detectedProject.repo}` : ''}
+
+No active goals for this project.
+
+Quick actions:
+- "Create a goal for [description]" - Start a new goal for this project
+- "Show all goals" - See goals across all projects
+</session-context>
+`;
+    }
+  }
 
   if (!state.active_context?.goal) {
     // No previous context, show active goals summary

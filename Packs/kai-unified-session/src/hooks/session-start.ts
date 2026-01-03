@@ -4,6 +4,7 @@
  *
  * Loads session context and generates resume prompt for Claude.
  * Triggered when a new Claude Code session starts.
+ * Detects project from cwd and shows project-specific goals.
  */
 
 import { startSession, generateStartContext } from '../storage/session-service';
@@ -41,8 +42,8 @@ async function main() {
     // Start/update session
     startSession(payload.session_id);
 
-    // Generate and output context for Claude
-    const context = generateStartContext();
+    // Generate and output context for Claude (with cwd for project detection)
+    const context = generateStartContext(payload.cwd);
     console.log(context);
 
   } catch (error) {

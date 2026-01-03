@@ -17,8 +17,10 @@ import {
   createBranch,
   abandonBranch,
   Project,
+  CreateProjectInput,
   createProject,
   addGoalToProject,
+  findBestMatchingProject,
 } from '../models';
 
 import {
@@ -399,20 +401,41 @@ export function getBranches(goalId: string): Branch[] {
 // ============================================================================
 
 /**
- * Create or get a project
+ * Register a new project
  */
-export function getOrCreateProject(name: string, path: string, description: string = ''): Project {
-  // Check if project exists by path
-  const existing = findProjectByPath(path);
+export function registerProject(input: CreateProjectInput): Project {
+  // Check if project already exists by path
+  const existing = findProjectByPath(input.path);
   if (existing) {
-    return existing;
+    // Update existing project with new info
+    const updated: Project = {
+      ...existing,
+      name: input.name,
+      description: input.description || existing.description,
+      repo: input.repo || existing.repo,
+      branch: input.branch || existing.branch,
+      aliases: input.aliases || existing.aliases,
+      auto_detect: input.auto_detect ?? existing.auto_detect,
+      tech_stack: input.tech_stack || existing.tech_stack,
+      conventions: input.conventions || existing.conventions,
+      updated: new Date().toISOString(),
+    };
+    saveProject(updated);
+    return updated;
   }
 
   // Create new project
-  const project = createProject(name, path, description);
+  const project = createProject(input);
   saveProject(project);
 
   return project;
+}
+
+/**
+ * Create or get a project (legacy compatibility)
+ */
+export function getOrCreateProject(name: string, path: string, description: string = ''): Project {
+  return registerProject({ name, path, description });
 }
 
 /**
@@ -420,6 +443,68 @@ export function getOrCreateProject(name: string, path: string, description: stri
  */
 export function getProjects(): Project[] {
   return loadAllProjects();
+}
+
+/**
+ * Get a project by ID
+ */
+export function getProject(projectId: string): Project | null {
+  return loadProject(projectId);
+}
+
+/**
+ * Detect project from a path (cwd)
+ */
+export function detectProjectFromPath(path: string): Project | null {
+  const projects = loadAllProjects();
+  return findBestMatchingProject(projects, path);
+}
+
+/**
+ * Get goals for a project
+ */
+export function getProjectGoals(projectId: string): Goal[] {
+  const project = loadProject(projectId);
+  if (!project) {
+    return [];
+  }
+
+  const allGoalIds = [
+    ...project.active_goals,
+    ...project.paused_goals,
+    ...project.completed_goals,
+    ...project.abandoned_goals,
+  ];
+
+  const goals: Goal[] = [];
+  for (const goalId of allGoalIds) {
+    const goal = loadGoal(goalId);
+    if (goal) {
+      goals.push(goal);
+    }
+  }
+
+  return goals;
+}
+
+/**
+ * Get active goals for a project
+ */
+export function getProjectActiveGoals(projectId: string): Goal[] {
+  const project = loadProject(projectId);
+  if (!project) {
+    return [];
+  }
+
+  const goals: Goal[] = [];
+  for (const goalId of project.active_goals) {
+    const goal = loadGoal(goalId);
+    if (goal) {
+      goals.push(goal);
+    }
+  }
+
+  return goals;
 }
 
 // ============================================================================
